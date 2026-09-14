@@ -627,49 +627,31 @@ function [t,theta_deg,u,x_mm] = runOnRig(cfg,g,s)
         end
     end
 
-    % ---- wait for the rod to be upright; do not race a countdown --------
-    % This used to be a blind "3... 2... 1...", which gave you three
-    % seconds to get from the keyboard to the rod. That is not enough, and
-    % missing it is expensive: the firmware's Turn_Off() LATCHES
-    % Flag_Stop = 1 as soon as the angle leaves ZHONGZHI +/- 500
-    % (2600..3600 counts), and nothing in the firmware ever clears it again
-    % -- only a fresh BAL,1 does. So the controller was being switched on
-    % during the very seconds you were still lifting the rod, and it died
-    % there: MATLAB still got BAL=1 back, nothing looked wrong, but Moto
-    % stayed 0 for the whole run and the cart never moved.
-    %
-    % Now the script waits for you. Take as long as you need.
-    fprintf("Lift the rod to VERTICAL and hold it steady.\n");
-    fprintf("(hanging reads about 1020 counts, upright about 3100)\n");
-    tw = tic;  lastPrint = -1;
-    while true
-        st = readStatusWheeltec(s);
-        if abs(st.AngleRaw - 3100) <= 450, break; end
-        if toc(tw) > 45
-            setBalance(s,false);
-            error("Lab4:RodNotUpright", ...
-                ['Gave up after 45 s. The angle still reads %d counts and ' ...
-                 'the window is 2600..3600.\n\n' ...
-                 'If the rod IS upright and the reading is still wrong, the ' ...
-                 'angle sensor needs calibrating\n(see the calibration ' ...
-                 'guide) -- that is a mechanical fault, not a gain you can ' ...
-                 'tune.'],st.AngleRaw);
-        end
-        if floor(toc(tw)) ~= lastPrint
-            lastPrint = floor(toc(tw));
-            fprintf("  waiting...  angle = %4d\n",st.AngleRaw);
-        end
-        pause(0.2);
-    end
+    fprintf("Hold the rod NEAR VERTICAL now, and keep holding it.\n");
+    for c = 3:-1:1, fprintf("%d...\n",c); pause(1); end
 
-    % Rod confirmed upright, so hand the motor over NOW, with no gap in
-    % which Turn_Off() could latch the stop flag again.
-    fprintf("Rod is up (angle = %d).\n",st.AngleRaw);
+    % ---- the controller is enabled HERE, after the countdown -----------
+    % Not before it. The firmware's Turn_Off() LATCHES Flag_Stop = 1 the
+    % moment the angle leaves ZHONGZHI +/- 500 (2600..3600 counts), and
+    % nothing in the firmware ever clears it again -- only a fresh BAL,1
+    % does. Enabling before the countdown therefore meant the three
+    % seconds spent lifting the rod were exactly the three seconds that
+    % killed the controller: MATLAB still got BAL=1 back, so nothing
+    % looked wrong, but Moto stayed 0 for the whole run and the cart never
+    % moved. Enable at the last possible moment instead, with the rod
+    % already up, which is also when Position_Zero is taken.
     if ~allZero
+        st = readStatusWheeltec(s);
+        if abs(st.AngleRaw - 3100) > 450
+            error("Lab4:RodNotUpright", ...
+                ['Angle reads %d counts. The firmware only drives the motor ' ...
+                 'between 2600 and 3600\n(ZHONGZHI 3100 +/- 500), so the ' ...
+                 'controller would be dead for this whole trial.\n\n' ...
+                 'Hold the rod near vertical DURING the countdown, then run ' ...
+                 'this section again.'],st.AngleRaw);
+        end
         setBalance(s,true);
-        fprintf("Controller is LIVE -- you will feel it push against your hand.\n");
     end
-    pause(1.5);
     disp(">>> RELEASE NOW <<<");
 
     cap = 4000;

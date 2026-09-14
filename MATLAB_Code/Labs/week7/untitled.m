@@ -88,19 +88,6 @@ cfg.GROUP_ID = "G01";
 % from whatever folder MATLAB happens to be pointing at.
 labFolder = fileparts(mfilename("fullpath"));
 if isempty(labFolder), labFolder = pwd; end
-
-% If the editor holds unsaved changes, MATLAB runs a TEMPORARY COPY of this
-% file and mfilename points into %TEMP%\Editor_xxxxx. Every capture would
-% then be written to a folder Windows deletes, and you would not find out
-% until after the lab. Catch it here, before anything is recorded.
-if startsWith(labFolder,tempdir,"IgnoreCase",true)
-    error("Lab4:UnsavedFile", ...
-        ['Control_System_Lab4.m has unsaved changes, so MATLAB is running a ' ...
-         'temporary copy\nand your captures would go to\n  %s\n' ...
-         'which Windows will delete.\n\n' ...
-         'Press Ctrl+S to save the file, then run Section 0 again.'],labFolder);
-end
-
 cfg.DATA_FOLDER = fullfile(labFolder,"data");
 if ~exist(cfg.DATA_FOLDER,"dir"), mkdir(cfg.DATA_FOLDER); end
 
@@ -493,21 +480,9 @@ function trial = runTrial(cfg,label,gains,s)
         [t,theta,u,x] = runOnRig(cfg,gains,s);
         note = "measured";
     end
-
-    % Section 1 (the THINK table) is optional, and students skip it. Never
-    % throw away a capture that has already been taken just because that
-    % section was not run -- the error used to fire on the line below,
-    % AFTER the ten seconds of data had been recorded.
-    if isfield(cfg,"think")
-        think = cfg.think;
-    else
-        think = struct("feedback","(Section 1 not run)","P_does","", ...
-                       "I_does","","D_does","","why_gains","");
-    end
-
     trial = struct("label",string(label),"gains",gains,"mode",cfg.MODE, ...
                    "t",t,"theta_deg",theta,"u_pwm",u,"cart_mm",x, ...
-                   "note",string(note),"think",think, ...
+                   "note",string(note),"think",cfg.think, ...
                    "group",cfg.GROUP_ID, ...
                    "stamp",string(datetime("now","Format","yyyyMMdd_HHmmss")));
 end
@@ -625,51 +600,11 @@ function [t,theta_deg,u,x_mm] = runOnRig(cfg,g,s)
             fprintf("Cart at %d, re-homing before this trial.\n",st.Encoder);
             homeCart(s,"Force",true);
         end
-    end
-
-    % ---- wait for the rod to be upright; do not race a countdown --------
-    % This used to be a blind "3... 2... 1...", which gave you three
-    % seconds to get from the keyboard to the rod. That is not enough, and
-    % missing it is expensive: the firmware's Turn_Off() LATCHES
-    % Flag_Stop = 1 as soon as the angle leaves ZHONGZHI +/- 500
-    % (2600..3600 counts), and nothing in the firmware ever clears it again
-    % -- only a fresh BAL,1 does. So the controller was being switched on
-    % during the very seconds you were still lifting the rod, and it died
-    % there: MATLAB still got BAL=1 back, nothing looked wrong, but Moto
-    % stayed 0 for the whole run and the cart never moved.
-    %
-    % Now the script waits for you. Take as long as you need.
-    fprintf("Lift the rod to VERTICAL and hold it steady.\n");
-    fprintf("(hanging reads about 1020 counts, upright about 3100)\n");
-    tw = tic;  lastPrint = -1;
-    while true
-        st = readStatusWheeltec(s);
-        if abs(st.AngleRaw - 3100) <= 450, break; end
-        if toc(tw) > 45
-            setBalance(s,false);
-            error("Lab4:RodNotUpright", ...
-                ['Gave up after 45 s. The angle still reads %d counts and ' ...
-                 'the window is 2600..3600.\n\n' ...
-                 'If the rod IS upright and the reading is still wrong, the ' ...
-                 'angle sensor needs calibrating\n(see the calibration ' ...
-                 'guide) -- that is a mechanical fault, not a gain you can ' ...
-                 'tune.'],st.AngleRaw);
-        end
-        if floor(toc(tw)) ~= lastPrint
-            lastPrint = floor(toc(tw));
-            fprintf("  waiting...  angle = %4d\n",st.AngleRaw);
-        end
-        pause(0.2);
-    end
-
-    % Rod confirmed upright, so hand the motor over NOW, with no gap in
-    % which Turn_Off() could latch the stop flag again.
-    fprintf("Rod is up (angle = %d).\n",st.AngleRaw);
-    if ~allZero
         setBalance(s,true);
-        fprintf("Controller is LIVE -- you will feel it push against your hand.\n");
     end
-    pause(1.5);
+
+    fprintf("Hold the rod near vertical. Release on the prompt.\n");
+    for c = 3:-1:1, fprintf("%d...\n",c); pause(1); end
     disp(">>> RELEASE NOW <<<");
 
     cap = 4000;
