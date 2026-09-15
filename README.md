@@ -11,11 +11,7 @@ It contains two halves that talk to each other over one serial link:
 | **Firmware** | STM32 C code: the 200 Hz balance loop plus an ASCII command layer added for teaching | on the rig |
 | **MATLAB_Code** | Weekly lab scripts and a helper toolbox that drive and record the rig | on the student's laptop |
 
-**The control loop is not in MATLAB, and cannot be.** The pendulum's unstable
-pole is 5.246 s⁻¹ — the angle error doubles every ~132 ms. The firmware's
-interrupt runs every 5 ms (26 samples per doubling); MATLAB over serial manages
-about 30 Hz (four). So the PID lives on the STM32, and MATLAB changes its gains
-at run time and records the result. Students never reflash to run an experiment.
+**The control loop is not in MATLAB** 
 
 ---
 
