@@ -32,6 +32,7 @@ int main(void)
 	EXTI_Init();                    //=====按键初始化(外部中断的形式)
 	OLED_Init();                    //=====OLED初始化
 	uart_init(72,128000);           //=====初始化串口1
+	// uart_init(72,112000);           //=====初始化串口1
 	UartCmd_Init();                 //=====改动 2/3:打开串口接收中断(必须在 uart_init 之后)
   MiniBalance_PWM_Init(7199,0);   //=====初始化PWM 10KHZ，用于驱动电机 
 	Encoder_Init_TIM4();            //=====初始化编码器（TIM2的编码器接口模式） 

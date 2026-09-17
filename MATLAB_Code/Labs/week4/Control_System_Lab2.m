@@ -92,8 +92,36 @@ cfg.GROUP_ID = "G01";                 % e.g. "G01", "G02", ...
 % MATLAB's current directory. That is the fix for Lab2_Data appearing in the
 % toolbox root: "Lab2_Data" was a relative path, so the folder landed wherever
 % MATLAB happened to be pointing when you ran setupPath.
-labFolder = fileparts(mfilename("fullpath"));
-if isempty(labFolder), labFolder = pwd; end   % e.g. pasted into Command Window
+% Where does this script live? Sections are run one at a time with
+% Ctrl+Enter, and MATLAB executes Run Section (and Evaluate Selection) from
+% a TEMPORARY COPY of the text -- so mfilename("fullpath") returns
+% %TEMP%\Editor_xxxxx and CANNOT be used to locate this file. mfilename is
+% reliable inside a FUNCTION, which is why setupPath.m still uses it, but
+% not in a script you run section by section, which is how this lab works.
+%
+% Resolve through the MATLAB search path instead: setupPath puts every
+% Labs\week* folder on it, and the temp folder is never on it.
+labFolder = '';
+
+onPath = which('Control_System_Lab2.m');
+if ~isempty(onPath) && ~startsWith(onPath,tempdir,'IgnoreCase',true)
+    labFolder = fileparts(onPath);
+end
+
+if isempty(labFolder)                 % not on the path -- try mfilename
+    here = fileparts(mfilename('fullpath'));
+    if ~isempty(here) && ~startsWith(here,tempdir,'IgnoreCase',true)
+        labFolder = here;
+    end
+end
+
+if isempty(labFolder)                 % last resort, and say so out loud
+    labFolder = pwd;
+    warning("Lab2:FolderGuess", ...
+        ['Could not locate Control_System_Lab2.m on the MATLAB path, so captures will ' ...
+         'go to\n  %s\nRun setupPath from MATLAB_Code if that is not ' ...
+         'where you want them.'],labFolder);
+end
 cfg.DATA_FOLDER = fullfile(labFolder,"Lab2_Data");
 
 % ---- Serial connection ----
