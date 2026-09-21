@@ -508,10 +508,8 @@ function trial = runTrial(cfg,label,gains,s)
         note = "measured";
     end
 
-    % Section 1 (the THINK table) is optional, and students skip it. Never
-    % throw away a capture that has already been taken just because that
-    % section was not run -- the error used to fire on the line below,
-    % AFTER the ten seconds of data had been recorded.
+    % Section 1 (the THINK table) is optional, and students skip it. Never throw away a capture that has already been taken just because that
+    % section was not run -- the error used to fire on the line below,AFTER the ten seconds of data had been recorded.
     if isfield(cfg,"think")
         think = cfg.think;
     else

@@ -1,8 +1,12 @@
 # MATLAB toolbox — 12061 inverted pendulum
 
-Two different boards live in this folder. **They speak different protocols
-and must not be mixed up** — using the wrong connect function is a timeout,
-not an error message, which is exactly how a whole afternoon gets lost.
+The host side of the rig: the toolbox that drives the pendulum, and the
+weekly lab scripts. The firmware it talks to lives in `../source_code/`.
+
+A staff working copy may also carry `bluepill/` — an older toolkit for a
+**different board**, kept out of the repository on purpose. **The two must not
+be mixed up**: using the wrong connect function gives a timeout, not an error
+message, which is exactly how a whole afternoon gets lost.
 
 ```matlab
 setupPath        % once per session, or put it in startup.m
@@ -65,19 +69,21 @@ resetIntegrator(s)                 % clear the accumulator between trials
 |---|---|
 | `pendulum/` | The working toolbox for the pendulum rig, including `homeCart` |
 | `experiments/` | `lab_step_response` (student experiment), `testPendulumCommands`, `testPendulumMotor`, `measureDeadband` |
-| `diagnostics/` | Only when something is wrong: `checkDataScopeLink`, `probeStreamTiming`, `probeCommandRx` |
 | `Labs/` | The weekly lab scripts — `week3` … `week13`, no `week9`. Students start here |
-| `bluepill/` | Older toolkit for a **different board**. Staff only; see the warning above |
-| `simulink/` | `STM32SerialSystem`, the model builders, and `Uni_Canberra_Inverted_Pendulum.slx` (in `bluepill/`) |
+| `bluepill/` | **Not in the repository.** Older toolkit for a different board; staff only, see the warning above |
+| `diagnostics/`, `simulink/` | **Not in the repository.** Staff debugging aids and model builders |
 
-`slprj/` is MATLAB's Simulink build cache — generated, and gitignored.
+`slprj/` is MATLAB's Simulink build cache — generated, and gitignored. If you
+cloned this repository you will not have the three folders marked above, and
+nothing in the weekly labs needs them.
 
 ---
 
 ## Bring-up order for a rig that has never been talked to
 
-1. Flash the firmware (repository root) — the connect step verifies the
-   board reports **R4-5**, and warns loudly if it does not
+1. Flash the firmware — open **`../source_code/`** in VS Code with the
+   PlatformIO extension, not the repository root. The connect step verifies
+   the board reports **R4-5**, and warns loudly if it does not
 2. `testPendulumCommands(s)` — everything except the motor
 3. Charge the battery. Below about 7 V the firmware refuses to drive the
    motor and the driver has no supply anyway
@@ -85,7 +91,8 @@ resetIntegrator(s)                 % clear the accumulator between trials
    scripts call this themselves, so this step is only for a bare session
 5. Rod off, cart centred, hands clear → `testPendulumMotor(s)`
 6. Calibrate the angle sensor if the hanging rod does not read 1010–1030
-   (see `摆杆角度传感器校准_作业指导书.pdf` one folder up)
+   (see `Pendulum_Angle_Calibration_QuickGuide.pdf`, kept with the lab
+   materials, not in this repository)
 
 ## Known characteristics of this rig
 
@@ -100,3 +107,7 @@ resetIntegrator(s)                 % clear the accumulator between trials
   is why `HOME` exists.
 - Actuator deadband: PWM below roughly 900 moves the cart nowhere at all.
 - DataScope frame rate is about 14 Hz, not the 20 Hz the 50 ms loop implies.
+- Polling `readStatusWheeltec` in a loop samples at about **40 Hz**, measured
+  on the rig in week 6. That is enough for recovery times, but it is 1/5 of
+  the firmware's own 200 Hz control rate — which is why the control loop runs
+  on the board and not here.

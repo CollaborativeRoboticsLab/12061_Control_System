@@ -36,20 +36,34 @@ Labs run from week 3, and the lab number trails the week number by two:
 
 ## Where the data goes
 
-Every script writes to a folder **next to itself**, resolved from
-`mfilename('fullpath')` rather than from MATLAB's current directory:
+Every script writes to a folder **next to itself**, located through the MATLAB
+search path:
 
 ```matlab
-labFolder = fileparts(mfilename("fullpath"));
+labFolder = '';
+onPath = which('Control_System_Lab4.m');      % the name of YOUR script
+if ~isempty(onPath) && ~startsWith(onPath,tempdir,'IgnoreCase',true)
+    labFolder = fileparts(onPath);
+end
 if isempty(labFolder), labFolder = pwd; end
 cfg.DATA_FOLDER = fullfile(labFolder,"data");
 ```
 
-This is a fix, not decoration. The scripts used to say
-`cfg.DATA_FOLDER = "Lab3_Data"` — a *relative* path, resolved against
-whatever folder MATLAB was pointing at, which is why those folders kept
-appearing in the toolbox root instead of beside the lab. Copy the pattern
-above into any new week's script.
+**Do not use `mfilename("fullpath")` here.** It is reliable inside a *function*,
+but these labs are run one section at a time with Ctrl+Enter, and MATLAB
+executes Run Section (and Evaluate Selection) from a **temporary copy** of the
+text. `mfilename` then returns `%TEMP%\Editor_xxxxx`, and every capture lands in
+a folder Windows later deletes — silently, so you find out after the lab. That
+is exactly what happened in week 6. `which` goes through the search path
+instead, and `setupPath` puts every `Labs/week*` folder on it; the temp folder
+is never on it.
+
+Nor should you use a bare relative path. The scripts used to say
+`cfg.DATA_FOLDER = "Lab3_Data"`, resolved against whatever folder MATLAB
+happened to be pointing at, which is why those folders kept appearing in the
+toolbox root instead of beside the lab.
+
+Copy the pattern above into any new week's script.
 
 Files are named `<GROUP_ID>_<label>_<timestamp>.mat` / `.csv`, so students
 must set `cfg.GROUP_ID` or they overwrite each other. These data folders are
@@ -58,7 +72,7 @@ gitignored — captures are the student's, not repository content.
 ## Adding a new week
 
 1. Make the folder, e.g. `week7/`.
-2. Put the script in it, with the `labFolder` pattern above.
+2. Put the script in it, with the `which`-based `labFolder` pattern above.
 3. Run `setupPath` again. It discovers `Labs/week*` at run time, so it needs
    no edit.
 

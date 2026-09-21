@@ -11,7 +11,12 @@ It contains two halves that talk to each other over one serial link:
 | **Firmware** | STM32 C code: the 200 Hz balance loop plus an ASCII command layer added for teaching | on the rig |
 | **MATLAB_Code** | Weekly lab scripts and a helper toolbox that drive and record the rig | on the student's laptop |
 
-**The control loop is not in MATLAB** 
+**The control loop is not in MATLAB.** It runs on the STM32 at 200 Hz,
+because the pendulum's unstable pole doubles the angle error every ~132 ms and
+MATLAB over serial manages only about 40 Hz. MATLAB changes the gains at run
+time and records the result; students never reflash to run an experiment.
+
+Repository: <https://github.com/CollaborativeRoboticsLab/12061_Control_System>
 
 ---
 
@@ -40,29 +45,38 @@ sends `HOME`, and the firmware declares the count to be 7925.
 
 ```
 Control_System_lab/
-├── platformio.ini          PlatformIO project: env "pendulum", ST-Link upload
-├── BALANCE/
-│   ├── CONTROL/            control.c — the 5 ms TIM1 ISR, angle PID, cart PD
-│   ├── CHECK/              swing-up and protection logic
-│   └── show/               OLED display
-├── HARDWARE/               ADC, ENCODER, MOTOR, KEY, LED, OLED, TIMER, EXTI,
-│                           DataScope_DP (binary telemetry frames)
-├── SYSTEM/
-│   ├── usart/              usart.c, and usart_cmd.c — the ASCII command layer
-│   ├── sys/                CMSIS headers, clock and NVIC helpers
-│   └── delay/
-├── USER/Minibalance.c      main(): init, then the 50 ms housekeeping loop
-├── boot/                   GNU startup file and linker script
-├── tools/build_gcc.sh      bare arm-none-eabi build, for CI / quick checks
-└── MATLAB_Code/
-    ├── setupPath.m         run once per session; also warns about shadowing
-    ├── pendulum/           the working toolbox for this rig
-    ├── Labs/               one folder per teaching week  ← students start here
-    ├── experiments/        bench tests: motor, deadband, step response
-    ├── diagnostics/        only when something is wrong
-    ├── bluepill/           older toolkit for a different board; do not mix
-    └── simulink/           model builders (not used in the weekly labs)
+├── source_code/              the STM32 firmware   <-- open THIS in VS Code
+│   ├── platformio.ini        PlatformIO project: env "pendulum", ST-Link upload
+│   ├── BALANCE/
+│   │   ├── CONTROL/          control.c - the 5 ms TIM1 ISR, angle PID, cart PD
+│   │   ├── CHECK/            swing-up and protection logic
+│   │   └── show/             OLED display
+│   ├── HARDWARE/             ADC, ENCODER, MOTOR, KEY, LED, OLED, TIMER, EXTI,
+│   │                         DataScope_DP (binary telemetry frames)
+│   ├── SYSTEM/
+│   │   ├── usart/            usart.c, and usart_cmd.c - the ASCII command layer
+│   │   ├── sys/              CMSIS headers, clock and NVIC helpers
+│   │   └── delay/
+│   ├── USER/Minibalance.c    main(): init, then the 50 ms housekeeping loop
+│   ├── boot/                 GNU startup file and linker script
+│   └── tools/build_gcc.sh    bare arm-none-eabi build, for CI / quick checks
+│
+└── MATLAB_Code/              the host side        <-- open THIS in MATLAB
+    ├── setupPath.m           run once per session; also warns about shadowing
+    ├── pendulum/             the working toolbox for this rig
+    ├── Labs/                 one folder per teaching week  <-- students start here
+    └── experiments/          bench tests: motor, deadband, step response
 ```
+
+The two halves never share a tool. VS Code + PlatformIO only ever opens
+`source_code/`; MATLAB only ever opens `MATLAB_Code/`. Nothing in one folder
+needs to know the path of anything in the other.
+
+A working copy may also carry `MATLAB_Code/bluepill/`, `simulink/` and
+`diagnostics/`. They are deliberately **not** in this repository: `bluepill/`
+targets a different board and must not be mixed with the rig toolbox, and the
+other two are staff debugging aids.
+
 
 ### `MATLAB_Code/pendulum/` — the toolbox
 
@@ -128,11 +142,22 @@ On Linux the port is `/dev/ttyUSB0` or `/dev/ttyACM0`, not `COM4`.
 
 ## Firmware
 
-Only needed when the C code changes; the board arrives programmed. Open
-**this folder** in VS Code with the PlatformIO extension, then
-<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>U</kbd>. Wait for `Verified OK`.
-See `PlatformIO_Quick_Guide.pdf` (one folder up) for the full procedure and the
-two failure modes worth telling apart:
+Only needed when the C code changes; the board arrives programmed.
+
+**Open the `source_code` folder in VS Code** — not the repository root, and not
+its parent. PlatformIO locates the project by the `platformio.ini` inside
+`source_code/`; open anything else and it either finds no project at all or, if
+you go up far enough, finds a stale one for a different board. Then
+<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>U</kbd> and wait for `Verified OK`.
+
+The serial monitor runs at **128000 baud**, set by `uart_init(72,128000)` in the
+firmware. Out of reset the board emits binary telemetry, which looks like
+garbage at any baud rate — send `PING` and press Enter to mute it. Do not change
+`monitor_speed` to chase that garbage.
+
+`PlatformIO_Quick_Guide.pdf` (kept with the lab materials, not in this
+repository) has the full procedure and the two failure modes worth telling
+apart:
 
 - `Error: open failed` — the ST-Link itself was not opened. Driver / USB / not plugged in.
 - `Error: init mode failed` — the adapter is fine, the chip is not reachable.
@@ -170,16 +195,22 @@ mutes it. `usart_cmd.c` carries the full protocol notes and revision history.
 - **Known issue:** on the current rig the hanging rod reads 988–1006 ADC counts
   against the 1020 ± 10 the firmware expects. Balancing is unlikely to work
   until the angle sensor is mechanically calibrated — see
-  `摆杆角度传感器校准_作业指导书.pdf` / `Pendulum_Angle_Calibration_QuickGuide.pdf`
-  one folder up.
+  `Pendulum_Angle_Calibration_QuickGuide.pdf`, kept with the lab materials
+  (not in this repository).
 
 ---
 
 ## Credits
 
-The firmware under `BALANCE/`, `HARDWARE/`, `SYSTEM/` and `USER/` derives from
+The firmware under `source_code/` — `BALANCE/`, `HARDWARE/`, `SYSTEM/` and
+`USER/` — derives from
 the WHEELTEC / 平衡小车之家 reference code shipped with the rig, **used with the
 vendor's permission**. Their attribution headers are left in place. The ASCII
-command layer (`SYSTEM/usart/usart_cmd.c`), the `HOME` encoder-framing
+command layer (`source_code/SYSTEM/usart/usart_cmd.c`), the `HOME` encoder-framing
 mechanism, the angle-loop integral term, and everything under `MATLAB_Code/`
 were written for this unit.
+
+The ST-Link USB driver (ST **STSW-LINK009**) is **not** redistributed here —
+it is ST Microelectronics' own package under ST's licence terms. Download it
+from ST, or take the copy kept with the lab materials. It is what fixes
+`Error: open failed` on a Windows machine that has never seen an ST-Link.

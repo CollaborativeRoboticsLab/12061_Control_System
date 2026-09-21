@@ -12,6 +12,8 @@ build_gcc/
 *.map
 
 # ---- Editor state -------------------------------------------------------------
+# Matches at any depth, so it covers both the stale copy left at the repo root
+# by the old layout and the one PlatformIO creates inside source_code/.
 .vscode/
 
 # ---- MATLAB ------------------------------------------------------------------
@@ -39,6 +41,13 @@ MATLAB_Code/Labs/week5/Control_System_Lab3_QA.m
 # readme-repo.md is the Chinese README.
 CHANGES.md
 readme-repo.md
+
+# ---- Vendor binaries ---------------------------------------------------------
+# stsw-link009.zip is ST's own ST-Link USB driver package (5 MB) under ST's
+# licence, not ours to redistribute, and it would sit in the history of a
+# repository that is otherwise about 1 MB of text. Keep a copy with the lab
+# materials instead; README.md says where to get it.
+# *.zip
 
 # ---- OS / OneDrive junk ------------------------------------------------------
 .DS_Store
