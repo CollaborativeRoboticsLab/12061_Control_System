@@ -120,20 +120,25 @@ int TIM1_UP_IRQHandler(void)
 		  if(auto_run==0)
       {
 				Turn_Off(Voltage);//倾角、电压保护
-				if(Swing_up==0) Position_Zero=Encoder,Last_Position=0,Last_Bias=0,Balance_Integral=0,Position_Target=0,Swing_up=1;
+				if(Swing_up==0) Position_Zero=Encoder,Last_Position=0,Last_Bias=0,Balance_Integral=0,Position_Integral=0,Position_Target=0,Swing_up=1;
 				
 				if(Flag_Stop==0)
 				{
 					Balance_Pwm =Balance(Angle_Balance);                                          //===角度PD控制	
 					if(++Position_Target>4) Position_Pwm=Position(Encoder),Position_Target=0;    //===位置PD控制 25ms进行一次位置控制
-					Moto=Balance_Pwm-Position_Pwm;      //===计算电机最终PWM
+					/* R4-6: kick_pwm is the Lab 5 disturbance. It is ADDED to
+					   the controller's own output, so the controller stays in
+					   charge and what you measure is its recovery. Zero unless
+					   a KICK is in flight; the watchdog in UartCmd_Tick()
+					   zeroes it again when the pulse expires. */
+					Moto=Balance_Pwm-Position_Pwm+kick_pwm;   //===计算电机最终PWM
 				  Xianfu_Pwm(),                         //===PWM限幅 防止占空比100%带来的系统不稳定因素
 		      Set_Pwm(Moto);                      //===赋值给PWM寄存器				
 				}
 
 			}
           /* R4-5: 急停时清积分,否则恢复的瞬间电机会被积起来的误差顶满 */
-          if(Flag_Stop==1) Set_Pwm(0),Balance_Integral=0;
+          if(Flag_Stop==1) Set_Pwm(0),Balance_Integral=0,Position_Integral=0;
       }   /* ==== 改动 3/3 (control.c):这个大括号收掉上面那个 else ==== */
 		}	
     if(Flag_Stop==0)	Led_Flash(100);      //===LED闪烁指示系统正常运行 
@@ -151,7 +156,7 @@ int TIM1_UP_IRQHandler(void)
 **************************************************************************/
 int Balance(float Angle)
 {  
-	 Bias=Angle-ZHONGZHI;              //求出平衡的角度中值 和机械相关
+	 Bias=Angle-Angle_Zero;            /* R4-6: was the ZHONGZHI constant */
 	 D_Bias=Bias-Last_Bias;            //求出偏差的微分 进行微分控制
 
 	 /* ==== R4-5: 角度环加积分项 (Lab 4 Step 4) ====
@@ -197,7 +202,38 @@ int Position(int Encoder)
     Position_Bias += Position_Least*0.2;	             //===一阶低通滤波器  
 	  Position_Differential=Position_Bias-Last_Position;
 	  Last_Position=Position_Bias;
-		Position_PWM=Position_Bias*Position_KP+Position_Differential*Position_KD; //===速度控制		
+	 /* ==== R4-6: optional integral on the CART loop ====================
+	    Off by default (Position_KI = 0), and while it is off the state is
+	    held at zero, so switching it on is always a clean start.
+
+	    Read this before you turn it on. The steady cart offset you see on
+	    a healthy rig is usually NOT a tracking error -- it is the cart
+	    balancing an angle setpoint that is slightly wrong. Integrating it
+	    away means leaning the rod further from true vertical instead: you
+	    trade cart travel for angle error, and pay phase lag around an
+	    already non-minimum-phase loop for the privilege. Trim Angle_Zero
+	    (GAIN,AZ) first. Reach for PKI only if a genuine steady
+	    disturbance survives that.
+
+	    Ts is 25 ms here, not 5 ms: Position() runs on every fifth control
+	    interrupt. Anti-windup clamps the integral's PWM CONTRIBUTION, so
+	    the ceiling does not move when Ki changes. ==================== */
+	 if(Position_KI > 0.0001f || Position_KI < -0.0001f)
+	 {
+		 float plim;
+		 Position_Integral += Position_Bias * 0.025f;   /* Ts = 25 ms */
+		 plim = POSITION_I_PWM_LIMIT / Position_KI;
+		 if(plim < 0) plim = -plim;
+		 if(Position_Integral >  plim) Position_Integral =  plim;
+		 if(Position_Integral < -plim) Position_Integral = -plim;
+	 }
+	 else
+	 {
+		 Position_Integral = 0;
+	 }
+
+		Position_PWM=Position_Bias*Position_KP+Position_Differential*Position_KD
+		             +Position_Integral*Position_KI;   /* R4-6 */
 //    Position_PWM=Position_Bias*(Position_KP+Basics_Position_KP)/2+Position_Differential*(Position_KD+Basics_Position_KD)/2; //===位置控制	
 	  return Position_PWM;
 }
@@ -291,7 +327,9 @@ u8 Turn_Off(int voltage)
 			else
       temp=0;
 				
-			if(!(Angle_Balance>(ZHONGZHI-500)&&Angle_Balance<(ZHONGZHI+500))||(voltage<700))
+			/* R4-6: the window tracks Angle_Zero, not the old constant, so
+			   trimming the setpoint moves the protection along with it. */
+			if(!(Angle_Balance>(Angle_Zero-500)&&Angle_Balance<(Angle_Zero+500))||(voltage<700))
 			{
 				Flag_Stop=1;
 				temp=1;

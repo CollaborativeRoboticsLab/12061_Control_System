@@ -29,11 +29,9 @@
 %
 %   4. THE THING THAT SURPRISES EVERYONE.
 %
-%      You are NOT going to write u = Kp*e in MATLAB. It would not work,
-%      and it is worth understanding why before you start.
+%      You are NOT going to write u = Kp*e in MATLAB. It would not work,and it is worth understanding why before you start.
 %
-%      In Lab 3 you measured the unstable pole: the angle error DOUBLES
-%      every ~132 ms. A control loop needs many samples per doubling to
+%      In Lab 3 you measured the unstable pole: the angle error DOUBLES  every ~132 ms. A control loop needs many samples per doubling to
 %      act in time. MATLAB talking over the serial link manages about
 %      30 Hz, i.e. 33 ms, i.e. FOUR samples per doubling. The firmware's
 %      control interrupt runs at 200 Hz: 26 samples per doubling.

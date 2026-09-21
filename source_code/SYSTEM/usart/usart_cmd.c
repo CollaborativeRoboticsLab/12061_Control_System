@@ -25,9 +25,11 @@
                                                      arm the end-stops
      HOMED               -> HOMED=0 / HOMED=1        are they armed?
      GAIN,<name>,<value> -> GAIN=<name>,<value>      BKP BKD BKI PKP PKD
-     K                   -> K=<bkp>,<bkd>,<bki>,<pkp>,<pkd>
-     IRESET              -> IRESET=0                 zero the integrator
-     STATUS              -> STATUS=<9 integers>      see below
+                                                     PKI AZ   (R4-6)
+     K                   -> K=<bkp>,<bkd>,<bki>,<pkp>,<pkd>,<pki>,<az>
+     IRESET              -> IRESET=0                 zero both integrators
+     KICK,<pwm>[,<ms>]   -> KICK=<pwm>               timed disturbance
+     STATUS              -> STATUS=<10 integers>     see below
      STREAM,1 / STREAM,0 -> STREAM=1 / STREAM=0      binary DataScope
      anything else       -> ERR=UNKNOWN
 
@@ -43,6 +45,13 @@
      7 auto_run        1 = automatic swing-up selected
      8 stream_enable   1 = binary DataScope frames are being sent
      9 rx_errors       dropped bytes: overrun + line overflow
+    10 kick_ticks     5 ms units of disturbance still to run, 0 = idle
+
+   Fields are APPEND-ONLY. A host that knows about nine of them must keep
+   working against a board that sends ten, so readStatusWheeltec.m splits
+   on commas and requires "at least 9" rather than matching exactly nine
+   and anchoring the end of the line. Never reorder or remove a field:
+   both sides address them by position.
 
    Streaming interlock
      stream_enable starts at 1, so a board that is never talked to
@@ -87,8 +96,27 @@
            K now reports FIVE values (bkp,bkd,bki,pkp,pkd) rather than
            four. New command IRESET zeroes the accumulator without
            touching the gains. Ki defaults to 0, so an untouched rig
-           behaves exactly as it did under R4-4.                       */
-#define UARTCMD_VERSION "R4-5"
+           behaves exactly as it did under R4-4.
+     R4-6  Lab 5 needs to compare controllers by how each recovers from
+           THE SAME disturbance, so the disturbance has to be repeatable.
+           A hand push is not: the spread between two pushes is wider than
+           the spread between two controllers, which would make the whole
+           experiment measure the experimenter's hand. New command KICK
+           adds a timed PWM offset ON TOP of the balance output, so the
+           controller stays in charge and what is measured is its
+           recovery. M could not do this job -- it sets manual_mode, which
+           REPLACES the balance loop, so an M sent while balancing simply
+           drops the rod.
+           STATUS gained a tenth field (kick ticks remaining) so the host
+           can align recovery time to the exact instant of the kick rather
+           than to a host-side timestamp with a serial round trip in it.
+           The angle setpoint left control.h and became the run-time
+           variable Angle_Zero (GAIN,AZ): a rig whose potentiometer is a
+           couple of degrees out used to need a per-rig edit and reflash.
+           Position_KI added for symmetry and, mainly, so Lab 5's claim
+           about where integral action belongs can be tested rather than
+           asserted. Both default to their R4-5 behaviour.              */
+#define UARTCMD_VERSION "R4-6"
 
 /* --- globals owned by the stock firmware -------------------- */
 extern u8    Flag_Stop;
@@ -98,6 +126,8 @@ extern int   Voltage;
 extern float Angle_Balance;
 extern float Balance_KP, Balance_KD, Position_KP, Position_KD;
 extern float Balance_KI, Balance_Integral;       /* R4-5 */
+extern float Position_KI, Position_Integral;     /* R4-6 */
+extern float Angle_Zero;                         /* R4-6 */
 extern u8    auto_run, autorun_step0, autorun_step1, autorun_step2;
 extern u8    success_flag, Swing_up;
 extern long  success_count, wait_count;
@@ -108,6 +138,8 @@ volatile u8  manual_mode   = 0;
 volatile int manual_pwm    = 0;
 volatile u8  stream_enable = 1;
 volatile u8  enc_homed     = 0;   /* limits are off until HOME arrives */
+volatile int kick_pwm      = 0;   /* R4-6: disturbance, summed into Moto */
+volatile u32 kick_ticks    = 0;   /* R4-6: 5 ms units left, 0 = idle     */
 
 /* --- private state ------------------------------------------ */
 static volatile char rx_line[UARTCMD_RX_BUF];   /* being filled by ISR */
@@ -312,6 +344,8 @@ void UartCmd_Abort(void)
     manual_mode  = 0;
     manual_pwm   = 0;
     manual_ticks = 0;
+    kick_pwm     = 0;              /* R4-6: a stop cancels the kick too */
+    kick_ticks   = 0;
 }
 
 /* called from TIM1_UP_IRQHandler, every 5 ms */
@@ -320,6 +354,15 @@ void UartCmd_Tick(void)
     if(manual_ticks)
     {
         if(--manual_ticks == 0) manual_pwm = 0;   /* watchdog expired */
+    }
+
+    /* R4-6: the disturbance pulse expires the same way, and for the same
+       reason. If the host crashes or the cable is pulled mid-kick, a
+       permanent PWM offset must not be left summed into the controller's
+       output -- the rod would be fighting a bias nobody can see. */
+    if(kick_ticks)
+    {
+        if(--kick_ticks == 0) kick_pwm = 0;
     }
 }
 
@@ -353,7 +396,9 @@ static void ProcessCommand(const char *p)
         cmd_putgain(Balance_KD);  cmd_putc(',');
         cmd_putgain(Balance_KI);  cmd_putc(',');   /* R4-5 */
         cmd_putgain(Position_KP); cmd_putc(',');
-        cmd_putgain(Position_KD);
+        cmd_putgain(Position_KD); cmd_putc(',');
+        cmd_putgain(Position_KI); cmd_putc(',');   /* R4-6 */
+        cmd_putgain(Angle_Zero);                   /* R4-6 */
         cmd_end();
         return;
     }
@@ -414,7 +459,8 @@ static void ProcessCommand(const char *p)
        gains under test. */
     if(is_cmd(p, "IRESET"))
     {
-        Balance_Integral = 0;
+        Balance_Integral  = 0;
+        Position_Integral = 0;          /* R4-6: both, or neither */
         reply_int("IRESET=", 0);
         return;
     }
@@ -436,7 +482,8 @@ static void ProcessCommand(const char *p)
         cmd_putint((long)manual_mode);   cmd_putc(',');
         cmd_putint((long)auto_run);      cmd_putc(',');
         cmd_putint((long)stream_enable); cmd_putc(',');
-        cmd_putint((long)rx_errors);
+        cmd_putint((long)rx_errors);     cmd_putc(',');
+        cmd_putint((long)kick_ticks);    /* R4-6: field 10, append-only */
         cmd_end();
         return;
     }
@@ -497,6 +544,71 @@ static void ProcessCommand(const char *p)
         return;
     }
 
+    /* --- KICK,<pwm>[,<ms>] : the repeatable disturbance (R4-6) -----
+       Lab 5 ranks controllers by how each one recovers from THE SAME
+       disturbance, so the disturbance must be identical every time. A
+       hand push is not: the spread between two pushes is wider than the
+       spread between two controllers, so a hand-pushed lab measures the
+       experimenter, not the gains.
+
+       This cannot be built out of M. M sets manual_mode, and manual mode
+       REPLACES the balance loop (see control.c); an M sent while the rod
+       is balancing drops it. KICK instead adds a timed offset to what the
+       controller already decided:
+
+           Moto = Balance_Pwm - Position_Pwm + kick_pwm;
+
+       so the loop stays closed for the whole event and the angle trace
+       afterwards is a recovery, not a fall. */
+    if(eat(&p, "KICK"))
+    {
+        if(!get_int(&p, &a)) { reply_str("ERR=SYNTAX"); return; }
+
+        if(a >  UARTCMD_KICK_PWM_MAX) a =  UARTCMD_KICK_PWM_MAX;
+        if(a < -UARTCMD_KICK_PWM_MAX) a = -UARTCMD_KICK_PWM_MAX;
+
+        if(get_int(&p, &b))
+        {
+            if(b < 0)                   b = 0;
+            if(b > UARTCMD_KICK_MAX_MS) b = UARTCMD_KICK_MAX_MS;
+        }
+        else
+        {
+            b = UARTCMD_KICK_DEFAULT_MS;
+        }
+
+        /* There has to be a controller running for this to disturb. With
+           the motor stopped, in manual mode, or mid swing-up, a kick is
+           either ignored outright or is an open-loop shove at an
+           unsupported rod. Say so, rather than replying KICK= and letting
+           the host record ten seconds of nothing. */
+        if(Flag_Stop || manual_mode || auto_run)
+        {
+            reply_str("ERR=NOTBALANCING");
+            return;
+        }
+
+        /* Same directional end-stop rule as M, for the same reason:
+           refuse only a kick that would drive further into a limit the
+           cart is already sitting on. Skipped until HOME, because before
+           that the encoder frame is unknown and the test would be
+           confident nonsense. */
+        if( enc_homed &&
+            ( (a > 0 && Encoder <= UARTCMD_ENC_MIN) ||
+              (a < 0 && Encoder >= UARTCMD_ENC_MAX) ) )
+        {
+            reply_str("ERR=ENDSTOP");
+            return;
+        }
+
+        kick_ticks = (u32)(b / 5);           /* TIM1 ticks are 5 ms */
+        if(kick_ticks == 0 && b > 0) kick_ticks = 1;
+        kick_pwm   = (int)a;
+
+        reply_int("KICK=", a);
+        return;
+    }
+
     if(eat(&p, "BAL"))
     {
         if(!get_int(&p, &a)) { reply_str("ERR=SYNTAX"); return; }
@@ -523,6 +635,7 @@ static void ProcessCommand(const char *p)
     {
         float *target;
         const char *echo;
+        u8 is_setpoint = 0;                                    /* R4-6 */
 
         while(*p == ' ' || *p == ',') p++;
 
@@ -531,11 +644,36 @@ static void ProcessCommand(const char *p)
         else if(eat(&p, "BKI")) { target = &Balance_KI;  echo = "BKI"; }
         else if(eat(&p, "PKP")) { target = &Position_KP; echo = "PKP"; }
         else if(eat(&p, "PKD")) { target = &Position_KD; echo = "PKD"; }
+        else if(eat(&p, "PKI")) { target = &Position_KI; echo = "PKI"; }
+        else if(eat(&p, "AZ"))  { target = &Angle_Zero;  echo = "AZ";
+                                  is_setpoint = 1; }
         else                    { reply_str("ERR=GAINNAME"); return; }
 
         if(!get_int(&p, &a)) { reply_str("ERR=SYNTAX"); return; }
-        if(a < -20000) a = -20000;
-        if(a >  20000) a =  20000;
+
+        if(is_setpoint)
+        {
+            /* AZ is an ADC reading, not a gain, so the +/-20000 gain
+               clamp would be meaningless here. Refuse an out-of-range
+               value outright instead of silently clamping it: Turn_Off()
+               only lets the motor run within +/-500 counts of this
+               number, so a typo would look like dead hardware. */
+            if(a < UARTCMD_AZ_MIN || a > UARTCMD_AZ_MAX)
+            {
+                reply_str("ERR=RANGE");
+                return;
+            }
+            /* Whatever the angle integrator has accumulated was measured
+               against the OLD target. Carrying it across would dump a
+               step of integral action into the motor at the exact moment
+               the setpoint moves. */
+            Balance_Integral = 0;
+        }
+        else
+        {
+            if(a < -20000) a = -20000;
+            if(a >  20000) a =  20000;
+        }
 
         *target = (float)a;
 

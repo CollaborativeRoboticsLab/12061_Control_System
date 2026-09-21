@@ -49,10 +49,29 @@
 #define UARTCMD_NUDGE_PWM     2500    /* M is capped to this before HOME */
 #define UARTCMD_NUDGE_MS      300     /* and to this long                */
 
+/* R4-6: the repeatable disturbance, for Lab 5.
+   Deliberately smaller and shorter than an M pulse. KICK is meant to
+   perturb a controller that is working, not to throw the cart across the
+   rail: the point of the experiment is the recovery, and a disturbance big
+   enough to saturate the motor on its own tells you nothing about the
+   gains. */
+#define UARTCMD_KICK_PWM_MAX    6500
+#define UARTCMD_KICK_DEFAULT_MS 100
+#define UARTCMD_KICK_MAX_MS     400
+
+/* R4-6: bounds on the run-time angle setpoint, in raw ADC counts.
+   Wide enough not to assume which way a rig's potentiometer is wired,
+   narrow enough that a typo cannot park the setpoint where Turn_Off()
+   would refuse to run the motor for ever. */
+#define UARTCMD_AZ_MIN        500
+#define UARTCMD_AZ_MAX        3600
+
 extern volatile u8  manual_mode;      /* 1 = PWM comes from the host   */
 extern volatile int manual_pwm;       /* PWM the host asked for        */
 extern volatile u8  stream_enable;    /* 1 = binary DataScope frames on*/
 extern volatile u8  enc_homed;        /* 1 = HOME sent, limits are real */
+extern volatile int kick_pwm;         /* R4-6: added on top of the loop */
+extern volatile u32 kick_ticks;       /* R4-6: 5 ms units left, 0=idle  */
 
 void UartCmd_Init(void);   /* call once, after uart_init()             */
 void UartCmd_Poll(void);   /* call from the main loop, as often as you can */

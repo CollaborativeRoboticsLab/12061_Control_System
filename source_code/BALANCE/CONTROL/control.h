@@ -18,6 +18,13 @@
    student changes Ki. 2000 of 6900 full scale: enough to remove a real
    offset, not enough for a wound-up integrator to slam the cart. */
 #define BALANCE_I_PWM_LIMIT 2000.0f
+
+/* R4-6: the same ceiling for the CART loop's integral term. Lower than the
+   angle loop's on purpose. The rail is only about 4000 counts end to end,
+   so a wound-up cart integrator has far less room to be wrong in than a
+   wound-up angle integrator, which at least gets its error sign flipped
+   for it every time the rod swings through vertical. */
+#define POSITION_I_PWM_LIMIT 1500.0f
 extern	int Balance_Pwm,Velocity_Pwm;
 
 extern float Bias;                       //倾角偏差

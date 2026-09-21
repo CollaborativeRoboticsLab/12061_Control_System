@@ -92,6 +92,9 @@ extern float Angle_Balance;                        //角位移传感器数据
 extern float Balance_KP,Balance_KD,Position_KP,Position_KD;  //PID系数
 extern float Balance_KI;            /* R4-5: angle-loop integral gain */
 extern float Balance_Integral;      /* R4-5: accumulated angle error   */
+extern float Position_KI;           /* R4-6: cart-loop integral gain   */
+extern float Position_Integral;     /* R4-6: accumulated cart error    */
+extern float Angle_Zero;            /* R4-6: angle setpoint, ADC counts*/
 extern float Menu,Amplitude1,Amplitude2,Amplitude3,Amplitude4; //PID调试相关参数
 extern u8 system_start;
 

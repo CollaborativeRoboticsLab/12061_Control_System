@@ -1,4 +1,5 @@
 #include "sys.h"
+#include "control.h"     /* R4-6: ZHONGZHI, the default angle setpoint    */
 #include "usart_cmd.h"   /* ==== 改动 1/3 (Minibalance.c):串口命令层 ==== */
   /**************************************************************************
 作者：平衡小车之家
@@ -11,12 +12,45 @@ int Encoder,Position_Zero=10000;            //编码器的脉冲计数
 int Moto;                                   //电机PWM变量 应是Motor的 向Moto致敬	
 int Voltage;                                //电池电压采样相关的变量
 float Angle_Balance;                        //角位移传感器数据
-float Balance_KP=400,Balance_KD=400,Position_KP=20,Position_KD=300;  //PID系数
+// float Balance_KP=400,Balance_KD=400,Position_KP=20,Position_KD=300;  //PID系数
+float Balance_KP=350,Balance_KD=350,Position_KP=20,Position_KD=300;  //PID系数
+
 /* R4-5: the angle loop was pure PD. Lab 4 asks students to add integral
    action, so Ki exists now and defaults to 0 -- i.e. the rig behaves
    exactly as before until someone sends GAIN,BKI,<value>. */
 float Balance_KI=0;
 float Balance_Integral=0;
+
+/* ==== R4-6 ==============================================================
+   Position_KI / Position_Integral
+     An integral term for the CART loop. Defaults to 0, so an untouched rig
+     behaves exactly as it did under R4-5. It exists so that Lab 5's claim
+     -- that integral action belongs in the outer loop -- can be TESTED on
+     the rig instead of asserted in a lecture. See Position() in control.c
+     for why it usually makes this particular rig worse.
+
+   Angle_Zero
+     The angle setpoint, in raw ADC counts. This used to be the
+     compile-time constant ZHONGZHI, which meant a rig whose pendulum
+     potentiometer sits a couple of degrees out could only be corrected by
+     editing this file and reflashing -- per rig. It is now settable at run
+     time with GAIN,AZ, and defaults to the old constant, so nothing
+     changes until someone deliberately sets it.
+
+     This matters more than it looks. A setpoint 23 counts (about 2
+     degrees) away from true vertical is not a controller fault and no gain
+     can remove it: the loop faithfully holds the rod at the angle it was
+     told to, and the cart then has to sit permanently off-centre to
+     balance the books. Lab 5 scores both of those.
+
+   THE BASELINE FOR LAB 5 IS THE FOUR NUMBERS ABOVE. To change it, edit
+   them here and reflash; the lab script reads the board's power-on gains
+   with readGains() and uses them, so this file stays the single source of
+   truth and the script needs no edit.
+   ======================================================================== */
+float Position_KI=0;
+float Position_Integral=0;
+float Angle_Zero=ZHONGZHI;
 //float Balance_KP=10,Balance_KD=0,Position_KP=0,Position_KD=0;  //PID系数
 float Menu=1,Amplitude1=5,Amplitude2=20,Amplitude3=1,Amplitude4=10; //PID调试相关参数                                               
 extern float D_Angle_Balance; //摆杆角度变化率
@@ -32,6 +66,11 @@ int main(void)
 	EXTI_Init();                    //=====按键初始化(外部中断的形式)
 	OLED_Init();                    //=====OLED初始化
 	uart_init(72,128000);           //=====初始化串口1
+	/* R4-6: the commented-out 112000 below is a dead end, kept only so
+	   nobody tries it twice. The garbage in the serial monitor right after
+	   reset is the binary DataScope stream, and it looks like garbage at
+	   EVERY baud rate -- send PING to mute it. Changing the rate here also
+	   breaks MATLAB, which opens the port at 128000. Delete the line. */
 	// uart_init(72,112000);           //=====初始化串口1
 	UartCmd_Init();                 //=====改动 2/3:打开串口接收中断(必须在 uart_init 之后)
   MiniBalance_PWM_Init(7199,0);   //=====初始化PWM 10KHZ，用于驱动电机 
