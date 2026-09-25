@@ -55,9 +55,9 @@
    rail: the point of the experiment is the recovery, and a disturbance big
    enough to saturate the motor on its own tells you nothing about the
    gains. */
-#define UARTCMD_KICK_PWM_MAX    6500
-#define UARTCMD_KICK_DEFAULT_MS 100
-#define UARTCMD_KICK_MAX_MS     400
+#define UARTCMD_KICK_PWM_MAX    6900
+#define UARTCMD_KICK_DEFAULT_MS 500
+#define UARTCMD_KICK_MAX_MS     1000
 
 /* R4-6: bounds on the run-time angle setpoint, in raw ADC counts.
    Wide enough not to assume which way a rig's potentiometer is wired,
